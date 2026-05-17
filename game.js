@@ -235,9 +235,46 @@ class Particle {
   }
 }
 
+// ── PowerUp ───────────────────────────────────────────────────────────────────
+class PowerUp {
+  constructor(x, y) {
+    this.x      = x;
+    this.y      = y;
+    this.type   = 'nova';
+    this.radius = 10;
+    this.dead   = false;
+    this.age    = 0;
+    this.ttl    = 10;
+  }
+
+  update(dt) {
+    this.age += dt;
+    this.ttl -= dt;
+    if (this.ttl <= 0) this.dead = true;
+  }
+
+  draw() {
+    const alpha = 0.5 + 0.5 * Math.sin(this.age * 5);
+    const r = this.radius;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.age * 0.5);
+    ctx.strokeStyle = `rgba(255, 200, 0, ${alpha.toFixed(2)})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, -r);
+    ctx.lineTo(r,  0);
+    ctx.lineTo(0,  r);
+    ctx.lineTo(-r, 0);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
 // ── Estado del juego ──────────────────────────────────────────────────────────
-let ship, bullets, asteroids, particles;
-let score, lives, level;
+let ship, bullets, asteroids, particles, powerups;
+let score, lives, level, novaCount;
 let state;      // 'playing' | 'dead' | 'gameover'
 let deadTimer;
 
@@ -254,14 +291,16 @@ function spawnAsteroids(count) {
 }
 
 function initGame() {
-  ship          = new Ship();
+  ship      = new Ship();
   bullets   = [];
   asteroids = [];
   particles = [];
-  score  = 0;
-  lives  = 3;
-  level  = 1;
-  state  = 'playing';
+  powerups  = [];
+  score     = 0;
+  lives     = 3;
+  level     = 1;
+  novaCount = 0;
+  state     = 'playing';
   spawnAsteroids(4);
 }
 
@@ -269,6 +308,7 @@ function nextLevel() {
   level++;
   bullets   = [];
   particles = [];
+  powerups  = [];
   ship.reset();
   spawnAsteroids(3 + level);
 }
@@ -316,9 +356,11 @@ function update(dt) {
   bullets.forEach(b => b.update(dt));
   asteroids.forEach(a => a.update(dt));
   particles.forEach(p => p.update(dt));
+  powerups.forEach(p => p.update(dt));
 
   bullets   = bullets.filter(b => !b.dead);
   particles = particles.filter(p => !p.dead);
+  powerups  = powerups.filter(p => !p.dead);
 
   // Bala vs asteroide
   const newAsteroids = [];
@@ -330,11 +372,32 @@ function update(dt) {
         score += POINTS[a.size];
         explode(a.x, a.y, a.size * 5);
         newAsteroids.push(...a.split());
+        if (a.size === 3 && Math.random() < 0.12) powerups.push(new PowerUp(a.x, a.y));
       }
     }
   }
   asteroids = asteroids.filter(a => !a.dead).concat(newAsteroids);
   bullets   = bullets.filter(b => !b.dead);
+
+  // Nave recoge power-up
+  for (const p of powerups) {
+    if (dist(ship, p) < ship.radius + p.radius) {
+      novaCount++;
+      p.dead = true;
+    }
+  }
+  powerups = powerups.filter(p => !p.dead);
+
+  // Activar Bomba Nova
+  if (pressed('KeyB') && novaCount > 0) {
+    novaCount--;
+    for (const a of asteroids) {
+      score += POINTS[a.size];
+      explode(a.x, a.y, a.size * 5);
+      a.dead = true;
+    }
+    asteroids = [];
+  }
 
   // Nave vs asteroide
   if (ship.invincible <= 0) {
@@ -381,6 +444,10 @@ function drawHUD() {
   for (let i = 0; i < lives; i++)
     drawLifeIcon(W - 16 - i * 22, 18);
 
+  if (novaCount > 0) {
+    ctx.textAlign = 'left';
+    ctx.fillText(`NOVA ◇ ${novaCount}  [B]`, 14, 50);
+  }
 }
 
 function drawOverlay(title, sub) {
@@ -398,6 +465,7 @@ function draw() {
   ctx.fillRect(0, 0, W, H);
 
   particles.forEach(p => p.draw());
+  powerups.forEach(p => p.draw());
   asteroids.forEach(a => a.draw());
   bullets.forEach(b => b.draw());
   ship.draw();
