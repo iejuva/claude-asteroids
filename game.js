@@ -135,7 +135,7 @@ class Ship {
     this.dead          = false;
   }
 
-  update(dt) {
+  update(dt, rotDt = dt) {
     if (this.dead) return;
     if (this.invincible    > 0) this.invincible    -= dt;
     if (this.shootCooldown > 0) this.shootCooldown -= dt;
@@ -144,8 +144,8 @@ class Ship {
     const THRUST = 260;  // px/s²
     const DRAG   = 0.987;
 
-    if (keys['ArrowLeft'])  this.angle -= ROT * dt;
-    if (keys['ArrowRight']) this.angle += ROT * dt;
+    if (keys['ArrowLeft'])  this.angle -= ROT * rotDt;
+    if (keys['ArrowRight']) this.angle += ROT * rotDt;
 
     this.thrusting = !!keys['ArrowUp'];
     if (this.thrusting) {
@@ -237,14 +237,14 @@ class Particle {
 
 // ── PowerUp ───────────────────────────────────────────────────────────────────
 class PowerUp {
-  constructor(x, y) {
+  constructor(x, y, type = null) {
     this.x      = x;
     this.y      = y;
-    this.type   = 'nova';
+    this.type   = type || (Math.random() < 0.5 ? 'nova' : 'slow');
     this.radius = 10;
     this.dead   = false;
     this.age    = 0;
-    this.ttl    = 10;
+    this.ttl    = 30;
   }
 
   update(dt) {
@@ -256,10 +256,13 @@ class PowerUp {
   draw() {
     const alpha = 0.5 + 0.5 * Math.sin(this.age * 5);
     const r = this.radius;
+    const color = this.type === 'slow'
+      ? `rgba(0, 200, 255, ${alpha.toFixed(2)})`
+      : `rgba(255, 200, 0, ${alpha.toFixed(2)})`;
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.age * 0.5);
-    ctx.strokeStyle = `rgba(255, 200, 0, ${alpha.toFixed(2)})`;
+    ctx.strokeStyle = color;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(0, -r);
@@ -274,7 +277,7 @@ class PowerUp {
 
 // ── Estado del juego ──────────────────────────────────────────────────────────
 let ship, bullets, asteroids, particles, powerups;
-let score, lives, level, novaCount;
+let score, lives, level, novaCount, slowTimer;
 let state;      // 'playing' | 'dead' | 'gameover'
 let deadTimer;
 
@@ -300,6 +303,7 @@ function initGame() {
   lives     = 3;
   level     = 1;
   novaCount = 0;
+  slowTimer = 0;
   state     = 'playing';
   spawnAsteroids(4);
 }
@@ -309,6 +313,7 @@ function nextLevel() {
   bullets   = [];
   particles = [];
   powerups  = [];
+  slowTimer = 0;
   ship.reset();
   spawnAsteroids(3 + level);
 }
@@ -339,6 +344,7 @@ function update(dt) {
   }
 
   if (state === 'dead') {
+    slowTimer = 0;
     deadTimer -= dt;
     particles.forEach(p => p.update(dt));
     particles = particles.filter(p => !p.dead);
@@ -352,10 +358,14 @@ function update(dt) {
     bullets.push(...ship.tryShoot());
   }
 
-  ship.update(dt);
-  bullets.forEach(b => b.update(dt));
-  asteroids.forEach(a => a.update(dt));
-  particles.forEach(p => p.update(dt));
+  if (slowTimer > 0) slowTimer -= dt;
+  const effectiveDt = slowTimer > 0 ? dt * 0.3 : dt;
+
+  ship.update(effectiveDt, dt);
+  const bulletDt = slowTimer > 0 ? dt * 0.65 : dt;
+  bullets.forEach(b => b.update(bulletDt));
+  asteroids.forEach(a => a.update(effectiveDt));
+  particles.forEach(p => p.update(effectiveDt));
   powerups.forEach(p => p.update(dt));
 
   bullets   = bullets.filter(b => !b.dead);
@@ -373,6 +383,7 @@ function update(dt) {
         explode(a.x, a.y, a.size * 5);
         newAsteroids.push(...a.split());
         if (a.size === 3 && Math.random() < 0.12) powerups.push(new PowerUp(a.x, a.y));
+        if (a.size < 3  && Math.random() < 0.02) powerups.push(new PowerUp(a.x, a.y, 'slow'));
       }
     }
   }
@@ -382,7 +393,8 @@ function update(dt) {
   // Nave recoge power-up
   for (const p of powerups) {
     if (dist(ship, p) < ship.radius + p.radius) {
-      novaCount++;
+      if (p.type === 'slow') slowTimer = 7;
+      else novaCount++;
       p.dead = true;
     }
   }
@@ -447,6 +459,11 @@ function drawHUD() {
   if (novaCount > 0) {
     ctx.textAlign = 'left';
     ctx.fillText(`NOVA ◇ ${novaCount}  [B]`, 14, 50);
+  }
+  if (slowTimer > 0) {
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(0, 200, 255, 0.9)';
+    ctx.fillText(`SLOW ◇ ${slowTimer.toFixed(1)}s`, 14, 72);
   }
 }
 
