@@ -140,9 +140,9 @@ class Ship {
     if (this.invincible    > 0) this.invincible    -= dt;
     if (this.shootCooldown > 0) this.shootCooldown -= dt;
 
-    const ROT   = 3.5;   // rad/s
-    const THRUST = 260;  // px/s²
-    const DRAG   = 0.987;
+    const ROT    = 3.5;
+    const THRUST = hyperTimer > 0 ? 520   : 260;
+    const DRAG   = hyperTimer > 0 ? 0.993 : 0.987;
 
     if (keys['ArrowLeft'])  this.angle -= ROT * rotDt;
     if (keys['ArrowRight']) this.angle += ROT * rotDt;
@@ -165,6 +165,14 @@ class Ship {
     const NOSE = 21;
     const ox = this.x + Math.cos(this.angle) * NOSE;
     const oy = this.y + Math.sin(this.angle) * NOSE;
+    if (tripleTimer > 0) {
+      const s = 0.20;
+      return [
+        new Bullet(ox, oy, this.angle - s),
+        new Bullet(ox, oy, this.angle),
+        new Bullet(ox, oy, this.angle + s),
+      ];
+    }
     return [new Bullet(ox, oy, this.angle)];
   }
 
@@ -200,6 +208,15 @@ class Ship {
     }
 
     ctx.restore();
+
+    if (shieldTimer > 0) {
+      const alpha = 0.4 + 0.4 * Math.sin(Date.now() * 0.008);
+      ctx.strokeStyle = `rgba(120, 220, 255, ${alpha.toFixed(2)})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, 22, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   }
 }
 
@@ -256,9 +273,11 @@ class PowerUp {
   draw() {
     const alpha = 0.5 + 0.5 * Math.sin(this.age * 5);
     const r = this.radius;
-    const color = this.type === 'slow'
-      ? `rgba(0, 200, 255, ${alpha.toFixed(2)})`
-      : `rgba(255, 200, 0, ${alpha.toFixed(2)})`;
+    const color = this.type === 'slow'   ? `rgba(0, 200, 255, ${alpha.toFixed(2)})`
+               : this.type === 'triple' ? `rgba(120, 255, 120, ${alpha.toFixed(2)})`
+               : this.type === 'shield' ? `rgba(120, 220, 255, ${alpha.toFixed(2)})`
+               : this.type === 'hyper'  ? `rgba(255, 100, 220, ${alpha.toFixed(2)})`
+               :                         `rgba(255, 200, 0, ${alpha.toFixed(2)})`;
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.age * 0.5);
@@ -277,7 +296,7 @@ class PowerUp {
 
 // ── Estado del juego ──────────────────────────────────────────────────────────
 let ship, bullets, asteroids, particles, powerups;
-let score, lives, level, novaCount, slowTimer;
+let score, lives, level, novaCount, slowTimer, tripleTimer, shieldTimer, hyperTimer;
 let state;      // 'playing' | 'dead' | 'gameover'
 let deadTimer;
 
@@ -302,9 +321,12 @@ function initGame() {
   score     = 0;
   lives     = 3;
   level     = 1;
-  novaCount = 0;
-  slowTimer = 0;
-  state     = 'playing';
+  novaCount   = 0;
+  slowTimer   = 0;
+  tripleTimer = 0;
+  shieldTimer = 0;
+  hyperTimer  = 0;
+  state       = 'playing';
   spawnAsteroids(4);
 }
 
@@ -313,7 +335,10 @@ function nextLevel() {
   bullets   = [];
   particles = [];
   powerups  = [];
-  slowTimer = 0;
+  slowTimer   = 0;
+  tripleTimer = 0;
+  shieldTimer = 0;
+  hyperTimer  = 0;
   ship.reset();
   spawnAsteroids(3 + level);
 }
@@ -344,7 +369,10 @@ function update(dt) {
   }
 
   if (state === 'dead') {
-    slowTimer = 0;
+    slowTimer   = 0;
+    tripleTimer = 0;
+    shieldTimer = 0;
+    hyperTimer  = 0;
     deadTimer -= dt;
     particles.forEach(p => p.update(dt));
     particles = particles.filter(p => !p.dead);
@@ -358,7 +386,10 @@ function update(dt) {
     bullets.push(...ship.tryShoot());
   }
 
-  if (slowTimer > 0) slowTimer -= dt;
+  if (slowTimer   > 0) slowTimer   -= dt;
+  if (tripleTimer > 0) tripleTimer -= dt;
+  if (shieldTimer > 0) shieldTimer -= dt;
+  if (hyperTimer  > 0) hyperTimer  -= dt;
   const effectiveDt = slowTimer > 0 ? dt * 0.3 : dt;
 
   ship.update(effectiveDt, dt);
@@ -382,8 +413,13 @@ function update(dt) {
         score += POINTS[a.size];
         explode(a.x, a.y, a.size * 5);
         newAsteroids.push(...a.split());
-        if (a.size === 3 && Math.random() < 0.12) powerups.push(new PowerUp(a.x, a.y));
-        if (a.size < 3  && Math.random() < 0.02) powerups.push(new PowerUp(a.x, a.y, 'slow'));
+        if (a.size === 3) {
+          if      (Math.random() < 0.12) powerups.push(new PowerUp(a.x, a.y));
+          else if (Math.random() < 0.05) powerups.push(new PowerUp(a.x, a.y, 'triple'));
+          else if (Math.random() < 0.04) powerups.push(new PowerUp(a.x, a.y, 'shield'));
+          else if (Math.random() < 0.03) powerups.push(new PowerUp(a.x, a.y, 'hyper'));
+        }
+        if (a.size < 3 && Math.random() < 0.02) powerups.push(new PowerUp(a.x, a.y, 'slow'));
       }
     }
   }
@@ -393,8 +429,11 @@ function update(dt) {
   // Nave recoge power-up
   for (const p of powerups) {
     if (dist(ship, p) < ship.radius + p.radius) {
-      if (p.type === 'slow') slowTimer = 7;
-      else novaCount++;
+      if      (p.type === 'slow')   slowTimer   = 7;
+      else if (p.type === 'triple') tripleTimer = 10;
+      else if (p.type === 'shield') shieldTimer = 5;
+      else if (p.type === 'hyper')  hyperTimer  = 8;
+      else                          novaCount++;
       p.dead = true;
     }
   }
@@ -415,10 +454,17 @@ function update(dt) {
   if (ship.invincible <= 0) {
     for (const a of asteroids) {
       if (dist(ship, a) < ship.radius + a.radius * 0.82) {
-        killShip();
+        if (shieldTimer > 0) {
+          shieldTimer = 0;
+          explode(a.x, a.y, a.size * 5);
+          a.dead = true;
+        } else {
+          killShip();
+        }
         break;
       }
     }
+    asteroids = asteroids.filter(a => !a.dead);
   }
 
   // Nivel completado
@@ -456,15 +502,18 @@ function drawHUD() {
   for (let i = 0; i < lives; i++)
     drawLifeIcon(W - 16 - i * 22, 18);
 
-  if (novaCount > 0) {
+  let hy = 50;
+  const hudLine = (txt, color) => {
+    ctx.fillStyle = color;
     ctx.textAlign = 'left';
-    ctx.fillText(`NOVA ◇ ${novaCount}  [B]`, 14, 50);
-  }
-  if (slowTimer > 0) {
-    ctx.textAlign = 'left';
-    ctx.fillStyle = 'rgba(0, 200, 255, 0.9)';
-    ctx.fillText(`SLOW ◇ ${slowTimer.toFixed(1)}s`, 14, 72);
-  }
+    ctx.fillText(txt, 14, hy);
+    hy += 22;
+  };
+  if (novaCount   > 0) hudLine(`NOVA ◇ ${novaCount}  [B]`,           '#fff');
+  if (slowTimer   > 0) hudLine(`SLOW ◇ ${slowTimer.toFixed(1)}s`,    'rgba(0,200,255,0.9)');
+  if (tripleTimer > 0) hudLine(`TRIPLE ◇ ${tripleTimer.toFixed(1)}s`, 'rgba(120,255,120,0.9)');
+  if (shieldTimer > 0) hudLine(`ESCUDO ◇ ${shieldTimer.toFixed(1)}s`, 'rgba(120,220,255,0.9)');
+  if (hyperTimer  > 0) hudLine(`HYPER ◇ ${hyperTimer.toFixed(1)}s`,   'rgba(255,100,220,0.9)');
 }
 
 function drawOverlay(title, sub) {

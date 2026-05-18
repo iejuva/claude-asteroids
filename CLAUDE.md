@@ -20,7 +20,7 @@ Visita `http://localhost:3000`.
 | ↑ | Propulsar |
 | Espacio | Disparar / reiniciar (game over) |
 | B | Activar Bomba Nova (si hay stock) |
-| — | Slow Motion (auto al recoger el rombo cian) |
+| — | Slow Motion / Disparo Triple / Escudo / Hiperpropulsión (auto al recoger) |
 
 ## Arquitectura
 
@@ -37,8 +37,8 @@ El archivo sigue un orden vertical claro:
    - `Asteroid` — polígono irregular; `split()` devuelve dos fragmentos de `size - 1`.
    - `Ship` — física con arrastre (`DRAG = 0.987`), invencibilidad temporal al reaparecer.
    - `Particle` — chispa de explosión con alpha decreciente.
-   - `PowerUp` — ítem recogible (rombo parpadeante); `ttl=30`, desaparece si no se recoge. Tipo `'nova'` (dorado) o `'slow'` (cian).
-4. **Estado global** — `ship`, `bullets`, `asteroids`, `particles`, `powerups`, `score`, `lives`, `level`, `novaCount`, `slowTimer`, `state` (`'playing' | 'dead' | 'gameover'`), `deadTimer` (temporizador de reaparición).
+   - `PowerUp` — ítem recogible (rombo parpadeante); `ttl=30`, desaparece si no se recoge. Tipos: `'nova'` (dorado), `'slow'` (cian), `'triple'` (verde), `'shield'` (cian claro), `'hyper'` (magenta).
+4. **Estado global** — `ship`, `bullets`, `asteroids`, `particles`, `powerups`, `score`, `lives`, `level`, `novaCount`, `slowTimer`, `tripleTimer`, `shieldTimer`, `hyperTimer`, `state` (`'playing' | 'dead' | 'gameover'`), `deadTimer` (temporizador de reaparición).
 5. **Funciones de juego** — `initGame`, `nextLevel`, `spawnAsteroids`, `explode`, `killShip`.
 6. **`update(dt)`** — máquina de estados principal; aplica física, detecta colisiones (radio circular), gestiona transiciones.
 7. **`draw()`** — limpia canvas, dibuja entidades, HUD y overlay.
@@ -65,9 +65,9 @@ Sistema extensible en `game.js`. Flujo: spawn al destruir asteroide → pickup p
 |----------|-------|-------|--------|
 | Bomba Nova | `B` | 12% al destruir size=3 | Implementado |
 | Slow Motion | auto | 12% size=3 (aleatorio con nova) · 2% size<3 (siempre slow) | Implementado |
-| Disparo Triple | — | — | Pendiente |
-| Escudo Temporal | — | — | Pendiente |
-| Hiperpropulsión | — | — | Pendiente |
+| Disparo Triple | auto | 5% size=3 (else-if tras nova/slow) | Implementado |
+| Escudo Temporal | auto | 4% size=3 | Implementado |
+| Hiperpropulsión | auto | 3% size=3 | Implementado |
 
 **Slow Motion — patrón de implementación:**
 - Usa `effectiveDt` escalado para entidades afectadas; entidades exentas reciben `dt` real.
@@ -87,4 +87,4 @@ Sistema extensible en `game.js`. Flujo: spawn al destruir asteroide → pickup p
 - **`keys` y `justPressed`**: deben declararse como `{}` antes de los event listeners. Si el juego no responde a teclado, verificar que estén presentes al inicio de la sección Input (se eliminaron accidentalmente en el commit `13e713f`).
 - La colisión nave-asteroide usa `a.radius * 0.82` (no el radio completo) para hacer el hitbox más justo visualmente.
 - Activar Bomba Nova destruye todos los asteroides y avanza el nivel (misma condición de victoria que disparo normal).
-- `PowerUp` recibe `type` opcional; si es `null`, elige aleatoriamente entre los tipos implementados. Para forzar un tipo al spawn: `new PowerUp(x, y, 'tipo')`.
+- `PowerUp` recibe `type` opcional; si es `null`, elige aleatoriamente entre `'nova'` y `'slow'` únicamente. Los tipos nuevos (`triple`, `shield`, `hyper`) siempre se instancian con `type` explícito. Para forzar un tipo al spawn: `new PowerUp(x, y, 'tipo')`.
